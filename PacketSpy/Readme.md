@@ -51,10 +51,7 @@
 ## Screenshots
 
 **Main Interface:**
-![Main Interface](https://example.com/screenshot-main.png)
-
-**Protocol Statistics:**
-![Protocol Statistics](https://example.com/screenshot-stats.png)
+![Screenshot 2024-12-03 154421](https://github.com/user-attachments/assets/a0e7b93e-97aa-4912-983d-7fdebc82d0d6)
 
 ---
 
