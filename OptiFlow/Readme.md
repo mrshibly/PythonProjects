@@ -66,6 +66,7 @@
 ---
 
 ## 🎨 Screenshots
+![Screenshot 2024-12-03 145410](https://github.com/user-attachments/assets/fc90c8ff-9064-4987-abd1-18fffd6925b6)
 
 ### Process Manager
 *Real-time process information with sorting, filtering, and controls.*
