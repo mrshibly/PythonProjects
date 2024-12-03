@@ -3,22 +3,24 @@ import psutil
 import threading
 import time
 from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QTableWidget, QTableWidgetItem, QVBoxLayout, 
-    QPushButton, QHBoxLayout, QWidget, QLabel, QInputDialog, QMessageBox, QTabWidget, QCheckBox
+    QApplication, QMainWindow, QTableWidget, QTableWidgetItem, QVBoxLayout,
+    QPushButton, QHBoxLayout, QWidget, QLabel, QInputDialog, QMessageBox,
+    QTabWidget, QCheckBox, QLineEdit, QSlider, QFormLayout
 )
 from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtGui import QColor
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-import graphviz
-from PyQt5.QtWebEngineWidgets import QWebEngineView  # For rendering Graphviz
+from datetime import datetime
+
 
 class ProcessAnalyzer(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Enhanced Process Analyzer and Optimizer")
+        self.setWindowTitle("Advanced Process Analyzer and Optimizer")
         self.setGeometry(100, 100, 1200, 800)
 
+        self.cpu_threshold = 50  # Default CPU usage threshold
         self.initUI()
 
     def initUI(self):
@@ -30,25 +32,45 @@ class ProcessAnalyzer(QMainWindow):
         self.process_tab = QWidget()
         self.process_tab_layout = QVBoxLayout(self.process_tab)
 
+        # Search Bar
+        search_layout = QHBoxLayout()
+        self.search_bar = QLineEdit()
+        self.search_bar.setPlaceholderText("Search process by name...")
+        self.search_bar.textChanged.connect(self.update_table)
+        search_layout.addWidget(self.search_bar)
+        self.process_tab_layout.addLayout(search_layout)
+
         # Process Table
         self.table = QTableWidget()
         self.table.setColumnCount(6)
         self.table.setHorizontalHeaderLabels(["PID", "Name", "CPU %", "Memory (MB)", "Status", "Parent PID"])
         self.process_tab_layout.addWidget(self.table)
 
-        # Buttons
-        button_layout = QHBoxLayout()
+        # Buttons and CPU Threshold Slider
+        controls_layout = QHBoxLayout()
         self.terminate_btn = QPushButton("Terminate Process")
         self.terminate_btn.clicked.connect(self.terminate_process)
         self.change_priority_btn = QPushButton("Change Priority")
         self.change_priority_btn.clicked.connect(self.change_priority)
-        self.filter_high_cpu = QCheckBox("Show High CPU Usage (>50%)")
+        self.filter_high_cpu = QCheckBox("Filter High CPU Usage")
         self.filter_high_cpu.stateChanged.connect(self.update_table)
 
-        button_layout.addWidget(self.terminate_btn)
-        button_layout.addWidget(self.change_priority_btn)
-        button_layout.addWidget(self.filter_high_cpu)
-        self.process_tab_layout.addLayout(button_layout)
+        # CPU Threshold Slider
+        self.cpu_threshold_slider = QSlider(Qt.Horizontal)
+        self.cpu_threshold_slider.setRange(10, 100)
+        self.cpu_threshold_slider.setValue(self.cpu_threshold)
+        self.cpu_threshold_slider.setTickInterval(10)
+        self.cpu_threshold_slider.setTickPosition(QSlider.TicksBelow)
+        self.cpu_threshold_slider.valueChanged.connect(self.update_cpu_threshold)
+
+        slider_layout = QFormLayout()
+        slider_layout.addRow("CPU Threshold (%)", self.cpu_threshold_slider)
+
+        controls_layout.addWidget(self.terminate_btn)
+        controls_layout.addWidget(self.change_priority_btn)
+        controls_layout.addWidget(self.filter_high_cpu)
+        controls_layout.addLayout(slider_layout)
+        self.process_tab_layout.addLayout(controls_layout)
 
         self.tabs.addTab(self.process_tab, "Process Manager")
 
@@ -63,16 +85,6 @@ class ProcessAnalyzer(QMainWindow):
 
         self.tabs.addTab(self.graph_tab, "Resource Monitoring")
 
-        # Dependency Visualization Tab
-        self.dependency_tab = QWidget()
-        dependency_layout = QVBoxLayout(self.dependency_tab)
-
-        self.dependency_view = QWebEngineView()
-        self.update_dependency_graph()
-        dependency_layout.addWidget(self.dependency_view)
-
-        self.tabs.addTab(self.dependency_tab, "Process Dependencies")
-
         # Timer for updates
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_table)
@@ -80,12 +92,19 @@ class ProcessAnalyzer(QMainWindow):
 
         self.update_table()
 
+    def update_cpu_threshold(self, value):
+        self.cpu_threshold = value
+        self.update_table()
+
     def update_table(self):
         self.table.setRowCount(0)  # Clear the table
+        search_query = self.search_bar.text().lower()
         filter_high_cpu = self.filter_high_cpu.isChecked()
         for proc in psutil.process_iter(attrs=['pid', 'name', 'cpu_percent', 'memory_info', 'status', 'ppid']):
             try:
-                if filter_high_cpu and proc.info['cpu_percent'] < 50:
+                if filter_high_cpu and proc.info['cpu_percent'] < self.cpu_threshold:
+                    continue
+                if search_query and search_query not in proc.info['name'].lower():
                     continue
                 row = [
                     str(proc.info['pid']),
@@ -104,22 +123,6 @@ class ProcessAnalyzer(QMainWindow):
                     self.table.setItem(row_position, col, item)
             except psutil.NoSuchProcess:
                 continue
-
-    def update_dependency_graph(self):
-        dot = graphviz.Digraph()
-        for proc in psutil.process_iter(attrs=['pid', 'name', 'ppid']):
-            try:
-                pid = proc.info['pid']
-                name = proc.info['name']
-                ppid = proc.info['ppid']
-                dot.node(str(pid), f"{name}\n(PID: {pid})")
-                if ppid > 0:
-                    dot.edge(str(ppid), str(pid))
-            except psutil.NoSuchProcess:
-                continue
-
-        dot.render("dependencies", format="svg", cleanup=True)
-        self.dependency_view.setUrl(f"file://{dot.filename}.svg")
 
     def terminate_process(self):
         row = self.table.currentRow()
@@ -160,12 +163,12 @@ class LiveGraph(FigureCanvas):
         self.title = title
         self.stat_func = stat_func
         self.data = []
+        self.timestamps = []
         self.start_graph()
 
     def start_graph(self):
         self.ax.set_title(self.title)
         self.ax.set_ylim(0, 100)
-        self.ax.set_xlim(0, 50)
         self.ax.set_ylabel("Usage (%)")
         self.ax.set_xlabel("Time (s)")
 
@@ -180,7 +183,13 @@ class LiveGraph(FigureCanvas):
                     value = value.percent
                 self.data.append(value)
                 self.data = self.data[-50:]
+
+                self.timestamps.append(datetime.now().strftime("%H:%M:%S"))
+                self.timestamps = self.timestamps[-50:]
+
                 self.line.set_data(range(len(self.data)), self.data)
+                self.ax.set_xticks(range(len(self.timestamps)))
+                self.ax.set_xticklabels(self.timestamps, rotation=45, fontsize=8)
                 self.ax.set_xlim(0, max(len(self.data), 50))
                 self.draw()
                 time.sleep(1)
@@ -191,6 +200,7 @@ class LiveGraph(FigureCanvas):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    app.setStyle("Fusion")  # Dark theme
     window = ProcessAnalyzer()
     window.show()
     sys.exit(app.exec_())
